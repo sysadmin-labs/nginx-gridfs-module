@@ -108,26 +108,32 @@ while [ "$i" -lt 2000 ]; do
 	i=$((i + 1))
 done
 
-uri="mongodb://127.0.0.1:$PORT/$DB"
+# The database is named with --db and not in the path of the URI.
+# mongofiles with a URI that carries a database wrote its files somewhere
+# else -- "mongofiles list" through the same URI listed them happily, while
+# mongoexport and the module, both looking in $DB, found an empty
+# collection.  That was the reason every lookup answered 404.  mongoexport
+# refuses --db together with a database in the URI, so neither gets one.
+uri="mongodb://127.0.0.1:$PORT"
 
 # --local is what names the file on disk; the first argument is the name it
 # gets in GridFS.  Handing the path over as the name, which is what
 # "mongofiles put <path>" does, stores the whole path -- and then nothing
 # can be asked for by a sensible name.
-"$MONGOFILES" --uri "$uri" --quiet \
+"$MONGOFILES" --uri "$uri" --db "$DB" --quiet \
 	put small.txt --local "$WORK/small.txt" --type text/plain > /dev/null
 
-"$MONGOFILES" --uri "$uri" --quiet \
+"$MONGOFILES" --uri "$uri" --db "$DB" --quiet \
 	put large.bin --local "$WORK/large.bin" \
 	--type application/octet-stream > /dev/null
 
 # A third one with no content type, so that the location's own default_type
 # has to be used for it.
-"$MONGOFILES" --uri "$uri" --quiet \
+"$MONGOFILES" --uri "$uri" --db "$DB" --quiet \
 	put plain.txt --local "$WORK/small.txt" > /dev/null
 
 echo "ci/mongodb.sh: database $DB holds:"
-"$MONGOFILES" --uri "$uri" --quiet list | sed 's/^/ci\/mongodb.sh:   /'
+"$MONGOFILES" --uri "$uri" --db "$DB" --quiet list | sed 's/^/ci\/mongodb.sh:   /'
 
 # The object ids are read back rather than chosen.  "mongofiles put_id"
 # takes an id, but what it makes of one is its business and not something to
@@ -140,7 +146,7 @@ echo "ci/mongodb.sh: database $DB holds:"
 # --out rather than stdout: mongoexport writes its documents to the file it
 # is given, and asking for stdout inside a command substitution came back
 # empty with nothing on stderr either.
-"$MONGOEXPORT" --uri "$uri" --collection fs.files \
+"$MONGOEXPORT" --uri "$uri" --db "$DB" --collection fs.files \
 	--out "$WORK/files.json" > "$WORK/mongoexport.log" 2>&1 || {
 	echo "ci/mongodb.sh: mongoexport failed" >&2
 	sed 's/^/ci\/mongodb.sh:   /' "$WORK/mongoexport.log" >&2 2>/dev/null || true

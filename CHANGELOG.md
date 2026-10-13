@@ -30,6 +30,14 @@ Newest first.  Dates are release dates.
 
 ### Fixed
 
+- `ci/mongodb.sh` put its files in a database nobody was looking in.
+  `mongofiles` with a URI that carries a database wrote them somewhere else
+  -- `mongofiles list` through the same URI listed them happily, while
+  `mongoexport` and the module, both looking in `ngxtest`, found an empty
+  collection.  That, and not anything in the module, is why every lookup in
+  `ci/gridfs.sh` answered 404.  The database is named with `--db` now, for
+  both tools, and in neither URI.
+
 - The `bson_error_t` that decides between 404 and 503 was never
   initialised.  libmongoc fills it in when a call fails and leaves it alone
   otherwise -- and `mongoc_gridfs_find_one_with_opts()` also leaves it alone
