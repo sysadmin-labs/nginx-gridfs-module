@@ -1,0 +1,54 @@
+name: GridFS
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    # Monday morning, so a new nginx release that breaks the module shows
+    # up here and not in somebody's build
+    - cron: '41 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gridfs:
+    name: files out of a real GridFS
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # t/ can say which configurations are accepted and what happens for a
+    # key that cannot name a file, and it says all of that without a
+    # database.  Whether a file comes back byte for byte, whether a range
+    # request answers with the right slice, and whether the content type and
+    # the ETag come out of the file's own record: that needs a server with
+    # something in it, which is this job.
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup
+        with:
+          test-nginx: 'false'
+          packages: libmongoc-dev libbson-dev
+
+      - name: Build nginx
+        run: |
+          . .github/versions.env
+          ci/build.sh "$NGINX_VERSION" "$HOME/nginx"
+
+      - name: Start a MongoDB with two files in it
+        run: ci/mongodb.sh
+
+      - name: Serve them and compare
+        run: ci/gridfs.sh "$HOME/nginx/sbin/nginx"
+
+      - name: What mongod said, if something failed
+        if: failure()
+        run: |
+          log=ci-work/mongodb/mongod.log
+          if [ -s "$log" ]; then
+            echo "--- $log, last 60 lines ---"
+            tail -60 "$log"
+          fi

@@ -1,0 +1,93 @@
+ngx_addon_name=ngx_http_gridfs_module
+
+# libmongoc, through pkg-config, because that is the only thing that knows
+# where it is: the library is called libmongoc-1.0 in its 1.x releases and
+# mongoc2 in its 2.x ones, the headers moved between them, and a package
+# built with a prefix of its own puts both somewhere else again.
+#
+# mongoc2 is tried first because that is what is current; a system still on
+# 1.x answers to the older name and the module builds against it unchanged.
+
+ngx_feature_name=
+ngx_feature_run=no
+ngx_feature_incs="#include <mongoc/mongoc.h>"
+ngx_feature_test="mongoc_init();
+                  (void) mongoc_client_pool_new_with_error(NULL, NULL);
+                  mongoc_cleanup()"
+
+ngx_gridfs_pkgs=
+ngx_gridfs_incs=
+ngx_gridfs_libs=
+
+# auto/feature sets this; the loop below reads it before the first call, so
+# it starts out as a plain "nothing found yet" rather than as nothing at all.
+ngx_found=no
+
+if [ -z "$PKG_CONFIG" ]; then
+    PKG_CONFIG=pkg-config
+fi
+
+if type "$PKG_CONFIG" > /dev/null 2>&1; then
+    for ngx_gridfs_try in "mongoc2 bson2" "libmongoc-1.0 libbson-1.0"; do
+        if [ $ngx_found = no ] &&
+           $PKG_CONFIG --exists $ngx_gridfs_try > /dev/null 2>&1
+        then
+            ngx_feature="libmongoc (via $PKG_CONFIG $ngx_gridfs_try)"
+
+            # CORE_INCS entries are bare directories -- nginx writes the -I
+            # in front of each itself -- so the flags have to be stripped
+            # back to paths here.
+            ngx_feature_path=$($PKG_CONFIG --cflags-only-I $ngx_gridfs_try |
+                               sed -e 's/-I//g')
+            ngx_feature_libs=$($PKG_CONFIG --libs $ngx_gridfs_try)
+
+            . auto/feature
+
+            if [ $ngx_found = yes ]; then
+                ngx_gridfs_pkgs=$ngx_gridfs_try
+                ngx_gridfs_incs=$ngx_feature_path
+                ngx_gridfs_libs=$ngx_feature_libs
+            fi
+        fi
+    done
+fi
+
+if [ $ngx_found = no ]; then
+    cat << END
+$0: error: ngx_http_gridfs_module requires libmongoc.  Install the MongoDB C
+driver (devel/mongo-c-driver on FreeBSD, libmongoc-dev on Debian and its
+relatives), or point pkg-config at it:
+    PKG_CONFIG_PATH=/path/lib/pkgconfig ./configure --add-module=...
+END
+    exit 1
+fi
+
+GRIDFS_SRCS="$ngx_addon_dir/src/ngx_http_gridfs_module.c"
+
+if [ -n "$ngx_module_link" ]; then
+    ngx_module_type=HTTP
+    ngx_module_name=$ngx_addon_name
+    ngx_module_incs="$ngx_gridfs_incs"
+    ngx_module_deps=
+    ngx_module_srcs="$GRIDFS_SRCS"
+
+    # libmongoc belongs to this module alone, so it goes on this module's
+    # link line and not into CORE_LIBS, where every other dynamic module of
+    # the same build would be linked against it as well.
+    ngx_module_libs="$ngx_gridfs_libs"
+
+    . auto/module
+
+    # auto/module keeps ngx_module_incs and ngx_module_libs per module only
+    # for a dynamic build.  A module compiled into the binary takes the
+    # global lists.
+    if [ "$ngx_module_link" != DYNAMIC ]; then
+        CORE_INCS="$CORE_INCS $ngx_gridfs_incs"
+        CORE_LIBS="$CORE_LIBS $ngx_gridfs_libs"
+    fi
+else
+    HTTP_MODULES="$HTTP_MODULES $ngx_addon_name"
+    NGX_ADDON_SRCS="$NGX_ADDON_SRCS $GRIDFS_SRCS"
+    CORE_INCS="$CORE_INCS $ngx_gridfs_incs"
+    CORE_LIBS="$CORE_LIBS $ngx_gridfs_libs"
+fi
