@@ -106,18 +106,22 @@ GET /f/anything.txt
 
 
 
-=== TEST 8: gridfs without mongo
-# The database to read is in one directive and the server to read it from is
-# in the other, so one without the other cannot work.  It is refused when
-# the worker starts, which is as early as this can be noticed: nothing is
-# resolved while the configuration is being read.
+=== TEST 8: gridfs without mongo takes the server this module always used
+# Not an error.  Before its driver layer was rewritten this module defaulted
+# to a mongod on this machine, so a configuration that leaves the directive
+# out has to keep working rather than being refused here.  The request is
+# one that is answered without asking MongoDB anything, so nothing waits for
+# a server nobody started.
 --- config
     location /f/ {
         gridfs ngxtest;
     }
---- must_die
---- error_log
-no "mongo" directive for database "ngxtest"
+--- request
+GET /f/not-an-object-id
+--- error_code: 404
+--- no_error_log
+[alert]
+[emerg]
 
 
 

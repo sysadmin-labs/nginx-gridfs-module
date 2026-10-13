@@ -259,10 +259,29 @@ ngx_http_gridfs_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     if (conf->uri.len == 0) {
 
         if (conf->servers == NULL || conf->servers->nelts == 0) {
-            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                               "gridfs: no \"mongo\" directive for database "
-                               "\"%V\"", &conf->db);
-            return NGX_CONF_ERROR;
+            ngx_http_gridfs_server_t  *server;
+
+            /* No "mongo" anywhere in the chain.  This module defaulted to a
+             * mongod on this machine before its driver layer was rewritten,
+             * and its documentation says the port defaults to 27017, so a
+             * configuration that leaves the directive out keeps working
+             * instead of being refused.  It goes through the same place as
+             * a configured server, so a user, a password or a replica set
+             * named further out still reach the URI.
+             */
+            conf->servers = ngx_array_create(cf->pool, 1,
+                                        sizeof(ngx_http_gridfs_server_t));
+            if (conf->servers == NULL) {
+                return NGX_CONF_ERROR;
+            }
+
+            server = ngx_array_push(conf->servers);
+            if (server == NULL) {
+                return NGX_CONF_ERROR;
+            }
+
+            ngx_str_set(&server->host, "127.0.0.1");
+            server->port = 27017;
         }
 
         if (ngx_http_gridfs_build_uri(cf->pool, conf) != NGX_OK) {

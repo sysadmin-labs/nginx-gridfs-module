@@ -2,6 +2,19 @@
 
 Newest first.  Dates are release dates.
 
+## v0.9.1 (2026-10-13)
+
+### Fixed
+
+- A `gridfs` without a `mongo` directive was refused while the
+  configuration was read.  The module this replaces defaulted to a mongod
+  on this machine -- `ngx_conf_merge_str_value(child->mongo, parent->mongo,
+  "127.0.0.1:27017")` -- and its documentation says the port defaults to
+  27017, so a configuration written against that would no longer start.
+  It means that server again, built through the same path as a configured
+  one, so a user, a password or a replica set named further out still
+  reach the URI.
+
 ## v0.9 (2026-10-13)
 
 ### Changed
