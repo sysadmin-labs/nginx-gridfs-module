@@ -126,11 +126,13 @@ uri="mongodb://127.0.0.1:$PORT"
 # "mongofiles put <path>" does, stores the whole path -- and then nothing
 # can be asked for by a sensible name.
 #
-# None of them is given a --type.  Where mongofiles puts what it is told
-# there is its own business, and it would be deciding the content-type
-# cases rather than the module: those records get their field written
-# straight into them further down.  plain.txt keeps no content type at all,
-# so that the location's own default_type has to be used for it.
+# None of them is given a --type.  mongofiles accepts the option and
+# writes the content type nowhere -- the records below say so themselves,
+# with an empty metadata document and no contentType field -- and it is
+# why the content-type case was answered with the default type for a
+# while.  The records that need one get their field written straight into
+# them further down, each in the place its own case is about.  plain.txt
+# keeps none at all, so that the location's default_type has to be used.
 for name in small.txt plain.txt meta.txt evil.txt; do
 	"$MONGOFILES" --uri "$uri" --db "$DB" --quiet \
 		put "$name" --local "$WORK/small.txt" > /dev/null

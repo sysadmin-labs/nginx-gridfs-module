@@ -30,14 +30,15 @@ Newest first.  Dates are release dates.
 
 ### Fixed
 
-- A content type was only looked for in the `contentType` field of the
-  file's record, which went out of the GridFS specification in 2019
-  together with md5 and aliases.  A driver is given a content type to this
-  day, and what it does with one is write it into the file's metadata
-  document -- so every file written by anything recent was served as the
-  location's `default_type`.  Both places are read now, the deprecated
-  field first, because a file written when this module was new has it there
-  and nowhere else.
+- A content type was only looked for in the file's `contentType` field,
+  which the GridFS specification deprecated in 2019 together with md5 and
+  aliases.  What a driver is told about a content type belongs in the
+  file's metadata document since then, and a tool may well drop it
+  altogether: `mongofiles --type` accepts one and writes it nowhere, which
+  is what the empty `metadata` and the missing `contentType` of every
+  record say in the output `ci/mongodb.sh` now prints.  Both places are
+  read now, the deprecated field first, because a file written when this
+  module was new has it there and nowhere else.
 
 - The content type and the md5 went into a header the way they came out of
   the database.  Neither is written by this module: whoever can put a file
