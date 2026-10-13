@@ -62,11 +62,17 @@ tar xzf "$WORK/dl/mongodb.tgz" -C "$WORK"
 tar xzf "$WORK/dl/mongotools.tgz" -C "$WORK"
 
 MONGOD=$WORK/mongodb-linux-x86_64-ubuntu2204-$MONGODB_VERSION/bin/mongod
-MONGOFILES=$WORK/mongodb-database-tools-ubuntu2204-x86_64-$MONGOTOOLS_VERSION/bin/mongofiles
+TOOLS=$WORK/mongodb-database-tools-ubuntu2204-x86_64-$MONGOTOOLS_VERSION/bin
+MONGOFILES=$TOOLS/mongofiles
+MONGOEXPORT=$TOOLS/mongoexport
 
 [ -x "$MONGOD" ] || { echo "ci/mongodb.sh: no mongod at $MONGOD" >&2; exit 1; }
 [ -x "$MONGOFILES" ] || {
 	echo "ci/mongodb.sh: no mongofiles at $MONGOFILES" >&2
+	exit 1
+}
+[ -x "$MONGOEXPORT" ] || {
+	echo "ci/mongodb.sh: no mongoexport at $MONGOEXPORT" >&2
 	exit 1
 }
 
@@ -104,24 +110,60 @@ done
 
 uri="mongodb://127.0.0.1:$PORT/$DB"
 
+# --local is what names the file on disk; the first argument is the name it
+# gets in GridFS.  Handing the path over as the name, which is what
+# "mongofiles put <path>" does, stores the whole path -- and then nothing
+# can be asked for by a sensible name.
 "$MONGOFILES" --uri "$uri" --quiet \
-	put_id "$WORK/small.txt" '{"$oid":"000000000000000000000001"}' \
-	--type text/plain > /dev/null
+	put small.txt --local "$WORK/small.txt" --type text/plain > /dev/null
 
 "$MONGOFILES" --uri "$uri" --quiet \
-	put_id "$WORK/large.bin" '{"$oid":"000000000000000000000002"}' \
+	put large.bin --local "$WORK/large.bin" \
 	--type application/octet-stream > /dev/null
 
-# A third one under a name, for field=filename, and with no content type so
-# that the location's own default_type has to be used.
-"$MONGOFILES" --uri "$uri" --quiet put "$WORK/small.txt" > /dev/null
+# A third one with no content type, so that the location's own default_type
+# has to be used for it.
+"$MONGOFILES" --uri "$uri" --quiet \
+	put plain.txt --local "$WORK/small.txt" > /dev/null
 
 echo "ci/mongodb.sh: database $DB holds:"
 "$MONGOFILES" --uri "$uri" --quiet list | sed 's/^/ci\/mongodb.sh:   /'
+
+# The object ids are read back rather than chosen.  "mongofiles put_id"
+# takes an id, but what it makes of one is its business and not something to
+# rely on; mongoexport prints what is actually in fs.files, and an ObjectId
+# comes out as {"$oid":"..."} -- which also says it is an ObjectId and not a
+# string that looks like one.
+files_json=$("$MONGOEXPORT" --uri "$uri" --quiet --collection fs.files \
+	--fields _id,filename 2>/dev/null)
+
+oid_of() {
+	printf '%s\n' "$files_json" |
+		grep -F "\"filename\":\"$1\"" |
+		sed -n 's/.*"\$oid":"\([0-9a-f]*\)".*/\1/p' |
+		head -1
+}
+
+small_id=$(oid_of small.txt)
+large_id=$(oid_of large.bin)
+plain_id=$(oid_of plain.txt)
+
+for pair in "small.txt:$small_id" "large.bin:$large_id" "plain.txt:$plain_id"; do
+	if [ -z "${pair#*:}" ]; then
+		echo "ci/mongodb.sh: no object id for ${pair%%:*} in fs.files" >&2
+		printf '%s\n' "$files_json" | sed 's/^/ci\/mongodb.sh:   /' >&2
+		exit 1
+	fi
+done
+
+echo "ci/mongodb.sh: small.txt is $small_id, large.bin is $large_id"
 
 cat > "$WORK/paths.env" <<EOF
 MONGO_WORK=$WORK
 MONGO_SMALL=$WORK/small.txt
 MONGO_LARGE=$WORK/large.bin
 MONGO_URI=$uri
+MONGO_SMALL_ID=$small_id
+MONGO_LARGE_ID=$large_id
+MONGO_PLAIN_ID=$plain_id
 EOF

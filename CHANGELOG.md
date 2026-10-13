@@ -52,6 +52,12 @@ Newest first.  Dates are release dates.
 - A content type from the file's own record, falling back to the location's
   `default_type`.
 
+- Everything a connection needs is decided while the configuration is read,
+  not when a worker starts.  A fault found in the worker is written into a
+  log nobody is watching: nginx has daemonized by then and whoever started
+  it has already been told the start succeeded.  So a `gridfs` without a
+  `mongo`, and a URI the driver will not take, are refused by `nginx -t`.
+
 - `t/`, which needs no database: which configurations are accepted and
   refused, and what a request gets for a key that cannot name a file.  A key
   that is not an object id where `type=objectid` is set answers 404 without

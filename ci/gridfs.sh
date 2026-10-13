@@ -121,8 +121,9 @@ trap cleanup EXIT INT TERM
 
 sleep 1
 
-SMALL_ID=000000000000000000000001
-LARGE_ID=000000000000000000000002
+# Read back from fs.files by ci/mongodb.sh, not chosen here
+SMALL_ID=${MONGO_SMALL_ID:?no object id for small.txt in paths.env}
+LARGE_ID=${MONGO_LARGE_ID:?no object id for large.bin in paths.env}
 
 small_len=$(wc -c < "$MONGO_SMALL" | tr -d ' ')
 large_len=$(wc -c < "$MONGO_LARGE" | tr -d ' ')
@@ -159,9 +160,8 @@ else
 fi
 
 echo "--- a file with no content type takes the location's default ---"
-name=$(basename "$MONGO_SMALL")
 ct=$(curl -s -o /dev/null -D - --max-time 20 \
-	"http://127.0.0.1:$PORT/name/$name" 2>/dev/null |
+	"http://127.0.0.1:$PORT/name/plain.txt" 2>/dev/null |
 	sed -n 's/^[Cc]ontent-[Tt]ype: *//p' | tr -d '\r')
 if [ "$ct" = "application/octet-stream" ]; then
 	echo "  application/octet-stream, from default_type"
@@ -171,11 +171,11 @@ fi
 
 echo "--- by filename ---"
 code=$(curl -s -o "$WORK/out/byname.bin" -w '%{http_code}' --max-time 20 \
-	"http://127.0.0.1:$PORT/name/$name" || true)
+	"http://127.0.0.1:$PORT/name/small.txt" || true)
 if [ "$code" = 200 ] && cmp -s "$WORK/out/byname.bin" "$MONGO_SMALL"; then
 	echo "  the same bytes, found under its name"
 else
-	note "code $code for /name/$name"
+	note "code $code for /name/small.txt"
 fi
 
 echo "--- a range in the middle of the big file ---"

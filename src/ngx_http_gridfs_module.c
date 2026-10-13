@@ -104,6 +104,8 @@ static void *ngx_http_gridfs_create_main_conf(ngx_conf_t *cf);
 static void *ngx_http_gridfs_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_gridfs_merge_loc_conf(ngx_conf_t *cf, void *parent,
     void *child);
+static ngx_int_t ngx_http_gridfs_build_uri(ngx_pool_t *pool,
+    ngx_http_gridfs_loc_conf_t *glcf);
 static ngx_int_t ngx_http_gridfs_init_worker(ngx_cycle_t *cycle);
 static void ngx_http_gridfs_exit_worker(ngx_cycle_t *cycle);
 static ngx_int_t ngx_http_gridfs_handler(ngx_http_request_t *r);
@@ -238,6 +240,43 @@ ngx_http_gridfs_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                            "\"gridfs\": field=filename needs type=string");
         return NGX_CONF_ERROR;
+    }
+
+    /* Everything a connection needs is decided here, while the
+     * configuration is being read, and not in the worker.  By the time a
+     * worker starts, nginx has daemonized and whoever started it has
+     * already been told the start succeeded: a fault found down there is
+     * written into a log nobody is watching, and nginx exits without
+     * anybody being any the wiser.
+     */
+    if (conf->uri.len == 0) {
+
+        if (conf->servers == NULL || conf->servers->nelts == 0) {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "gridfs: no \"mongo\" directive for database "
+                               "\"%V\"", &conf->db);
+            return NGX_CONF_ERROR;
+        }
+
+        if (ngx_http_gridfs_build_uri(cf->pool, conf) != NGX_OK) {
+            return NGX_CONF_ERROR;
+        }
+    }
+
+    {
+        mongoc_uri_t  *uri;
+        bson_error_t   error;
+
+        uri = mongoc_uri_new_with_error((char *) conf->uri.data, &error);
+
+        if (uri == NULL) {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "gridfs: cannot make sense of \"%V\": %s",
+                               &conf->uri, error.message);
+            return NGX_CONF_ERROR;
+        }
+
+        mongoc_uri_destroy(uri);
     }
 
     if (conf->field == NGX_HTTP_GRIDFS_FIELD_ID
@@ -469,7 +508,7 @@ ngx_http_gridfs(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
  * connection problem rather than a quoting one.
  */
 static ngx_int_t
-ngx_http_gridfs_build_uri(ngx_cycle_t *cycle,
+ngx_http_gridfs_build_uri(ngx_pool_t *pool,
     ngx_http_gridfs_loc_conf_t *glcf)
 {
     ngx_http_gridfs_server_t  *server;
@@ -505,7 +544,7 @@ ngx_http_gridfs_build_uri(ngx_cycle_t *cycle,
         len += sizeof("?replicaSet=") - 1 + glcf->replset.len + 2 * ereplset;
     }
 
-    glcf->uri.data = ngx_pnalloc(cycle->pool, len);
+    glcf->uri.data = ngx_pnalloc(pool, len);
     if (glcf->uri.data == NULL) {
         return NGX_ERROR;
     }
@@ -570,20 +609,9 @@ ngx_http_gridfs_init_worker(ngx_cycle_t *cycle)
 
     for (i = 0; i < gmcf->loc_confs.nelts; i++) {
 
-        if (glcfp[i]->uri.len == 0) {
-
-            if (glcfp[i]->servers == NULL || glcfp[i]->servers->nelts == 0) {
-                ngx_log_error(NGX_LOG_EMERG, cycle->log, 0,
-                              "gridfs: no \"mongo\" directive for database "
-                              "\"%V\"", &glcfp[i]->db);
-                return NGX_ERROR;
-            }
-
-            if (ngx_http_gridfs_build_uri(cycle, glcfp[i]) != NGX_OK) {
-                return NGX_ERROR;
-            }
-        }
-
+        /* The URI was built and checked while the configuration was read,
+         * see ngx_http_gridfs_merge_loc_conf().
+         */
         uri = mongoc_uri_new_with_error((char *) glcfp[i]->uri.data, &error);
         if (uri == NULL) {
             ngx_log_error(NGX_LOG_EMERG, cycle->log, 0,

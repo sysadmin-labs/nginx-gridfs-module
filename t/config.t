@@ -120,13 +120,18 @@ no "mongo" directive for database "ngxtest"
 
 
 
-=== TEST 9: an address that is not one
+=== TEST 9: a port that cannot be one
+# The host is not resolved while the configuration is read -- a name that
+# only exists in production has to be allowed -- so what can be refused
+# here is the part that is wrong on its face.
 --- config
     location /f/ {
-        mongo "not a host";
+        mongo 127.0.0.1:99999;
         gridfs ngxtest;
     }
 --- must_die
+--- error_log
+invalid port
 
 
 
