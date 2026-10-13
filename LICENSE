@@ -1,6 +1,18 @@
 This software can be used under either the Apache License or the
 GPL. The text of each license is below.
 
+   The module in src/ is Michael Dirolf's, under those terms, and its
+   driver layer was rewritten for libmongoc on 13 October 2026 -- the
+   notice at the head of that file says so, as the GPL requires.  The
+   rewrite and the build and test scaffolding around it -- ci/, t/,
+   .github/, config and the documentation -- are derived work and are
+   under the same two licences, held by:
+
+       Copyright (c) 2026, Jochen Neumeister <joneum@FreeBSD.org>
+
+   This paragraph is not part of either licence; the texts below are
+   unaltered.
+
                                  Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/

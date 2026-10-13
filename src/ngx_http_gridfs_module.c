@@ -35,9 +35,13 @@
  */
 
 /*
- * The driver layer of this module was rewritten for libmongoc.  What it
- * replaces talked to the legacy mongo-c-driver, which this module carried
- * as a git submodule: that driver has not existed for years, the submodule
+ * Changed on 13 October 2026 by Jochen Neumeister <joneum@FreeBSD.org>:
+ * the driver layer of this module was rewritten for libmongoc.  The GPL,
+ * one of the two licences above, asks for that sentence with its date; the
+ * Apache License asks for the notice without one.
+ *
+ * What the rewrite replaces talked to the legacy mongo-c-driver, which this
+ * module carried as a git submodule: that driver has not existed for years, the submodule
  * pointed at a git:// URL GitHub stopped serving in 2021, and the
  * directory it should have filled was empty.  Nothing here could be built
  * any more.
