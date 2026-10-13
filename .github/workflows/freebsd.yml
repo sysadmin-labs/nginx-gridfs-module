@@ -41,4 +41,5 @@ jobs:
             # root;" into its configuration.  root has no group of that
             # name here, it is in wheel
             TEST_NGINX_WORKER_USER='root wheel' \
-              TEST_NGINX_BINARY="$HOME/nginx/sbin/nginx" prove -r t/
+              TEST_NGINX_NO_SHUFFLE=1 \
+            TEST_NGINX_BINARY="$HOME/nginx/sbin/nginx" prove -r t/
