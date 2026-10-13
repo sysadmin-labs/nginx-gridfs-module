@@ -137,12 +137,21 @@ echo "ci/mongodb.sh: database $DB holds:"
 # The whole document rather than selected fields, and stderr kept: a
 # mongoexport that refuses an option would otherwise say so into /dev/null
 # and look like an empty collection.
-files_json=$("$MONGOEXPORT" --uri "$uri" --quiet --collection fs.files \
-	2> "$WORK/mongoexport.err") || true
+# --out rather than stdout: mongoexport writes its documents to the file it
+# is given, and asking for stdout inside a command substitution came back
+# empty with nothing on stderr either.
+"$MONGOEXPORT" --uri "$uri" --collection fs.files \
+	--out "$WORK/files.json" > "$WORK/mongoexport.log" 2>&1 || {
+	echo "ci/mongodb.sh: mongoexport failed" >&2
+	sed 's/^/ci\/mongodb.sh:   /' "$WORK/mongoexport.log" >&2 2>/dev/null || true
+	exit 1
+}
+
+files_json=$(cat "$WORK/files.json" 2>/dev/null)
 
 if [ -z "$files_json" ]; then
-	echo "ci/mongodb.sh: mongoexport returned nothing for fs.files" >&2
-	sed 's/^/ci\/mongodb.sh:   /' "$WORK/mongoexport.err" >&2 2>/dev/null || true
+	echo "ci/mongodb.sh: mongoexport wrote no documents for fs.files" >&2
+	sed 's/^/ci\/mongodb.sh:   /' "$WORK/mongoexport.log" >&2 2>/dev/null || true
 	exit 1
 fi
 
