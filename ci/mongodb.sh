@@ -8,10 +8,12 @@
 #     MONGO_DB     database to use, ngxtest by default
 #
 # The server and mongofiles come from MongoDB's own archives, pinned by
-# digest in .github/versions.env, and are unpacked under ci-work/.  Neither
-# is a package on the systems this is built on: Ubuntu dropped MongoDB over
-# the licence change, and FreeBSD has no server port any more either -- so
-# there is nothing to install and nothing of the host's to disturb.
+# digest in .github/versions.env, and are unpacked under ci-work/, so there
+# is nothing to install and nothing of the host's to disturb.  Ubuntu
+# dropped MongoDB over the licence change, and MongoDB publishes no FreeBSD
+# archive -- FreeBSD carries the server in its ports tree instead
+# (databases/mongodb70 and newer), which is a different mechanism than a
+# pinned archive and not what this script does.
 #
 # It leaves an already running server on that port alone.
 
@@ -41,6 +43,8 @@ Linux)  ;;
 	echo "ci/mongodb.sh: MongoDB publishes no server archive for $(uname -s)," >&2
 	echo "ci/mongodb.sh: so this cannot run here.  The module builds and the" >&2
 	echo "ci/mongodb.sh: suite in t/ runs; only this script needs a server." >&2
+	echo "ci/mongodb.sh: on FreeBSD the ports tree has one: databases/mongodb70" >&2
+	echo "ci/mongodb.sh: and databases/mongodb-tools." >&2
 	exit 2
 	;;
 esac

@@ -128,10 +128,12 @@ Newest first.  Dates are release dates.
   a key that is not there, and ten requests at once.
 
   Both mongod and mongofiles come from MongoDB's own archives, pinned by
-  digest: MongoDB is not a package on either system this is built on.
-  Ubuntu dropped it over the licence change and FreeBSD has no server port
-  any more -- which is also why this runs on Linux only, there being no
-  FreeBSD server build to use.
+  digest.  Ubuntu dropped MongoDB over the licence change, and MongoDB
+  publishes no FreeBSD archive, which is why this runs on Linux only.
+  FreeBSD does have the server in its ports tree -- `databases/mongodb70`
+  and newer, with `databases/mongodb-tools` beside it -- so these checks
+  could run there from packages; that is a different mechanism and is not
+  what this script does.
 
 - The reload gate asks the module without needing a database: it requests a
   well-formed object id from a port nothing listens on and insists on a 503.
