@@ -33,7 +33,7 @@
  * with this program; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
-/*
+
 /*
  * The driver layer of this module was rewritten for libmongoc.  What it
  * replaces talked to the legacy mongo-c-driver, which this module carried
