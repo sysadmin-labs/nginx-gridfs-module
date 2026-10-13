@@ -64,18 +64,19 @@ field=filename needs type=string
 
 
 === TEST 5: field=filename with type=string
+# The request goes to the gridfs location, not past it.  Nothing listens on
+# that port, so the answer is 503 -- which is the module saying it got as
+# far as trying.  A request to some other location with a "return" in it
+# would prove only that "return" works: a return fires in the rewrite phase
+# and the content handler never runs.
 --- config
     location /f/ {
-        mongo 127.0.0.1:17017;
+        mongo mongodb://127.0.0.1:17099/?serverSelectionTimeoutMS=500;
         gridfs ngxtest field=filename type=string;
     }
-    location = /t {
-        return 200 'served';
-    }
 --- request
-GET /t
---- response_body chop
-served
+GET /f/anything.txt
+--- error_code: 503
 
 
 
@@ -136,18 +137,18 @@ invalid port
 
 
 === TEST 10: a connection URI is taken as it stands
+# 503 rather than a served file: the URI was accepted, the pool was built
+# from it, and the module went looking.  That the option in it is honoured
+# is what makes this block quick -- with libmongoc's default of thirty
+# seconds the request would sit there instead.
 --- config
     location /f/ {
-        mongo mongodb://127.0.0.1:17017/?serverSelectionTimeoutMS=500;
+        mongo mongodb://127.0.0.1:17099/?serverSelectionTimeoutMS=500;
         gridfs ngxtest;
     }
-    location = /t {
-        return 200 'served';
-    }
 --- request
-GET /t
---- response_body chop
-served
+GET /f/000000000000000000000001
+--- error_code: 503
 
 
 
@@ -164,15 +165,21 @@ cannot make sense of
 
 
 === TEST 12: a replica set, which is three words
+# What this proves is that the URI built from two hosts and a name --
+# mongodb://host,host/db?replicaSet=rs0 -- is one libmongoc accepts, which
+# is checked while the configuration is read: a URI it refuses stops nginx
+# from starting, as TEST 11 shows.
+#
+# It deliberately does not ask the module for a file.  The URI built from
+# words carries no serverSelectionTimeoutMS, so a request to a replica set
+# that is not there would sit for libmongoc's default of thirty seconds --
+# in the worker.  Only the "mongo <uri>" form can say otherwise, and that
+# is TEST 10.
 --- config
     location /f/ {
-        mongo rs0 127.0.0.1:17017 127.0.0.1:17018;
+        mongo rs0 127.0.0.1:17098 127.0.0.1:17099;
         gridfs ngxtest;
     }
-    location = /t {
-        return 200 'served';
-    }
 --- request
-GET /t
---- response_body chop
-served
+GET /nothing-here
+--- error_code: 404

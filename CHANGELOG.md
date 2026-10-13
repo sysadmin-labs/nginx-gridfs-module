@@ -28,6 +28,23 @@ Newest first.  Dates are release dates.
   goes out as soon as it arrives, so a client starts receiving before the
   whole file has been fetched.
 
+### Fixed
+
+- The `bson_error_t` that decides between 404 and 503 was never
+  initialised.  libmongoc fills it in when a call fails and leaves it alone
+  otherwise -- and `mongoc_gridfs_find_one_with_opts()` also leaves it alone
+  when the query worked and matched nothing, which is exactly the case this
+  code tells apart from a failure by looking at `error.message`.  So a file
+  that is not there was answered with whatever was on the stack, usually
+  503 instead of 404, and that same stack went into the error log.
+
+- A key with a NUL byte in it -- `%00` in the request -- was passed to
+  `BSON_APPEND_UTF8`, which takes no length and asks `strlen`.  The query
+  then asked for a shorter name than the one that arrived, while the log
+  lines spoke of the longer one.  The filter is built with the length now,
+  like the object-id and integer branches, and a key holding a NUL is
+  answered 404 before any of that.
+
 ### Added
 
 - `mongo <uri>`: a single argument beginning with `mongodb://` or

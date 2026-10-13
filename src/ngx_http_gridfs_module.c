@@ -838,6 +838,17 @@ ngx_http_gridfs_handler(ngx_http_request_t *r)
         return NGX_HTTP_NOT_FOUND;
     }
 
+    /* A key with a NUL byte in it -- "%00" in the request -- cannot name
+     * anything in GridFS, and passing it on would mean asking for a
+     * different, shorter name than the one that arrived: the filter below
+     * is built with the length, but a log line is not.
+     */
+    if (memchr(key.data, '\0', key.len) != NULL) {
+        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                       "gridfs: the key holds a NUL byte");
+        return NGX_HTTP_NOT_FOUND;
+    }
+
     field = (glcf->field == NGX_HTTP_GRIDFS_FIELD_FILENAME)
             ? "filename" : "_id";
 
@@ -877,11 +888,25 @@ ngx_http_gridfs_handler(ngx_http_request_t *r)
         break;
 
     default: /* NGX_HTTP_GRIDFS_TYPE_STRING */
-        BSON_APPEND_UTF8(&filter, field, (char *) key.data);
+        /* With the length, not with BSON_APPEND_UTF8, which takes -1 and
+         * then asks strlen: the other two branches here work from key.len,
+         * and all three have to mean the same key.
+         */
+        bson_append_utf8(&filter, field, (int) ngx_strlen(field),
+                         (char *) key.data, (int) key.len);
         break;
     }
 
     client = mongoc_client_pool_pop(glcf->pool);
+
+    /* libmongoc fills this in when a call fails and leaves it alone when a
+     * call succeeds -- and mongoc_gridfs_find_one_with_opts() also leaves
+     * it alone when the query worked and matched nothing, which is the case
+     * this code tells apart from a failure by looking at error.message.  An
+     * uninitialised bson_error_t therefore decided between 404 and 503 by
+     * whatever was on the stack, and put that same stack into the log.
+     */
+    ngx_memzero(&error, sizeof(bson_error_t));
 
     gfs = mongoc_client_get_gridfs(client, (char *) glcf->db.data,
                                    (char *) glcf->root_collection.data,
@@ -894,6 +919,8 @@ ngx_http_gridfs_handler(ngx_http_request_t *r)
         mongoc_client_pool_push(glcf->pool, client);
         return NGX_HTTP_SERVICE_UNAVAILABLE;
     }
+
+    ngx_memzero(&error, sizeof(bson_error_t));
 
     file = mongoc_gridfs_find_one_with_opts(gfs, &filter, NULL, &error);
 
