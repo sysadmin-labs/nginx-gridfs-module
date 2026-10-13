@@ -112,6 +112,9 @@ static ngx_int_t ngx_http_gridfs_build_uri(ngx_pool_t *pool,
     ngx_http_gridfs_loc_conf_t *glcf);
 static ngx_int_t ngx_http_gridfs_init_worker(ngx_cycle_t *cycle);
 static void ngx_http_gridfs_exit_worker(ngx_cycle_t *cycle);
+static ngx_int_t ngx_http_gridfs_header_value_ok(const char *value,
+    size_t len);
+static ngx_int_t ngx_http_gridfs_md5_ok(const char *md5);
 static ngx_int_t ngx_http_gridfs_handler(ngx_http_request_t *r);
 
 
@@ -777,6 +780,50 @@ ngx_http_gridfs_range(ngx_http_request_t *r, int64_t length, int64_t *start,
 }
 
 
+/* A content type goes into a header as it stands, and an ETag is made from
+ * the file's md5 -- both out of a record this module does not write.
+ * Whoever can put a file in the database could otherwise end a header early
+ * and begin one of their own, or a body, so a value carrying a CR, an LF or
+ * any other control character is refused here instead of being handed to
+ * the header filter.
+ */
+static ngx_int_t
+ngx_http_gridfs_header_value_ok(const char *value, size_t len)
+{
+    size_t  i;
+
+    for (i = 0; i < len; i++) {
+        if ((u_char) value[i] < 0x20 || (u_char) value[i] == 0x7f) {
+            return NGX_DECLINED;
+        }
+    }
+
+    return NGX_OK;
+}
+
+
+/* Thirty-two hex digits and nothing else.  The loop stops at the first
+ * character that is not one, and a NUL is not one, so nothing is read past
+ * the end of a shorter string.
+ */
+static ngx_int_t
+ngx_http_gridfs_md5_ok(const char *md5)
+{
+    size_t  i;
+
+    for (i = 0; i < 32; i++) {
+        if (!((md5[i] >= '0' && md5[i] <= '9')
+              || (md5[i] >= 'a' && md5[i] <= 'f')
+              || (md5[i] >= 'A' && md5[i] <= 'F')))
+        {
+            return NGX_DECLINED;
+        }
+    }
+
+    return (md5[32] == '\0') ? NGX_OK : NGX_DECLINED;
+}
+
+
 static ngx_int_t
 ngx_http_gridfs_handler(ngx_http_request_t *r)
 {
@@ -789,6 +836,8 @@ ngx_http_gridfs_handler(ngx_http_request_t *r)
     bson_t                       filter;
     bson_oid_t                   oid;
     bson_error_t                 error;
+    bson_iter_t                  iter;
+    const bson_t                *meta;
     ngx_str_t                    key;
     ngx_chain_t                  out;
     ngx_buf_t                   *b;
@@ -796,6 +845,8 @@ ngx_http_gridfs_handler(ngx_http_request_t *r)
     const char                  *field, *content_type, *md5;
     int64_t                      length, start, end, remaining, upload_date;
     int32_t                      chunk_size;
+    size_t                       content_type_len;
+    uint32_t                     utf8_len;
     ssize_t                      got;
     u_char                      *dst, *src;
 
@@ -951,9 +1002,30 @@ ngx_http_gridfs_handler(ngx_http_request_t *r)
 
     length = mongoc_gridfs_file_get_length(file);
     chunk_size = mongoc_gridfs_file_get_chunk_size(file);
-    content_type = mongoc_gridfs_file_get_content_type(file);
     md5 = mongoc_gridfs_file_get_md5(file);
     upload_date = mongoc_gridfs_file_get_upload_date(file);
+
+    content_type = mongoc_gridfs_file_get_content_type(file);
+    content_type_len = (content_type != NULL) ? ngx_strlen(content_type) : 0;
+
+    /* The top-level "contentType" field went out of the GridFS
+     * specification in 2019, along with md5 and aliases, and what a driver
+     * is told about a content type today is written into the file's
+     * metadata document instead.  Both places are read, the deprecated
+     * field first: a file written by the drivers this module was serving a
+     * decade ago has it there and nowhere else.
+     */
+    if (content_type_len == 0) {
+        meta = mongoc_gridfs_file_get_metadata(file);
+
+        if (meta != NULL
+            && bson_iter_init_find(&iter, meta, "contentType")
+            && BSON_ITER_HOLDS_UTF8(&iter))
+        {
+            content_type = bson_iter_utf8(&iter, &utf8_len);
+            content_type_len = utf8_len;
+        }
+    }
 
     if (chunk_size <= 0) {
         chunk_size = NGX_HTTP_GRIDFS_CHUNK_SIZE;
@@ -1032,12 +1104,22 @@ ngx_http_gridfs_handler(ngx_http_request_t *r)
         end = (length > 0) ? length - 1 : -1;
     }
 
-    if (content_type != NULL && *content_type != '\0') {
-        r->headers_out.content_type.len = ngx_strlen(content_type);
+    if (content_type_len != 0
+        && ngx_http_gridfs_header_value_ok(content_type, content_type_len)
+           == NGX_OK)
+    {
+        r->headers_out.content_type.len = content_type_len;
         r->headers_out.content_type.data = (u_char *) content_type;
         r->headers_out.content_type_lowcase = NULL;
 
     } else {
+        if (content_type_len != 0) {
+            ngx_log_error(NGX_LOG_WARN, r->connection->log, 0,
+                          "gridfs: the content type of %s \"%V\" is not a "
+                          "header value, the default type is used instead",
+                          field, &key);
+        }
+
         r->headers_out.content_type = clcf->default_type;
         r->headers_out.content_type_lowcase = NULL;
     }
@@ -1052,7 +1134,7 @@ ngx_http_gridfs_handler(ngx_http_request_t *r)
      * of the specification in 2019 -- so a file written by a recent driver
      * may not have one, and then there is nothing to make an ETag from.
      */
-    if (md5 != NULL && *md5 != '\0') {
+    if (md5 != NULL && ngx_http_gridfs_md5_ok(md5) == NGX_OK) {
         r->headers_out.etag = ngx_list_push(&r->headers_out.headers);
         if (r->headers_out.etag == NULL) {
             rc = NGX_HTTP_INTERNAL_SERVER_ERROR;

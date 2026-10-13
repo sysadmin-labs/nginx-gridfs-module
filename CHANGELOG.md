@@ -30,6 +30,24 @@ Newest first.  Dates are release dates.
 
 ### Fixed
 
+- A content type was only looked for in the `contentType` field of the
+  file's record, which went out of the GridFS specification in 2019
+  together with md5 and aliases.  A driver is given a content type to this
+  day, and what it does with one is write it into the file's metadata
+  document -- so every file written by anything recent was served as the
+  location's `default_type`.  Both places are read now, the deprecated
+  field first, because a file written when this module was new has it there
+  and nowhere else.
+
+- The content type and the md5 went into a header the way they came out of
+  the database.  Neither is written by this module: whoever can put a file
+  into the collection decided what a `Content-Type` and an `ETag` line
+  said, and a value with a CR and an LF in it ended the header and began
+  one of its own -- or, with a blank line, a body of its own.  A content
+  type carrying a control character is refused now and the default type is
+  used in its place, with a line in the error log; an md5 that is not
+  thirty-two hex digits gets no ETag.
+
 - `ci/mongodb.sh` put its files in a database nobody was looking in.
   `mongofiles` with a URI that carries a database wrote them somewhere else
   -- `mongofiles list` through the same URI listed them happily, while

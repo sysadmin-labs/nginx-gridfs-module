@@ -90,6 +90,11 @@ http {
         location /name/ {
             mongo mongodb://127.0.0.1:$MONGO_PORT/?serverSelectionTimeoutMS=2000;
             gridfs $DB field=filename type=string;
+
+            # Nothing in the database can produce this one, so a response
+            # carrying it fell back to the default and did not take a
+            # content type out of a record.
+            default_type text/x-gridfs-default;
         }
 
         location /host/ {
@@ -154,19 +159,42 @@ ct=$(curl -s -o /dev/null -D - --max-time 20 \
 	"http://127.0.0.1:$PORT/id/$SMALL_ID" 2>/dev/null |
 	sed -n 's/^[Cc]ontent-[Tt]ype: *//p' | tr -d '\r')
 if [ "$ct" = "text/plain" ]; then
-	echo "  text/plain, which is what mongofiles was told"
+	echo "  text/plain, from the deprecated contentType field"
 else
 	note "Content-Type: \"$ct\", expected text/plain"
+fi
+
+echo "--- and out of the metadata, where the specification put it in 2019 ---"
+ct=$(curl -s -o /dev/null -D - --max-time 20 \
+	"http://127.0.0.1:$PORT/name/meta.txt" 2>/dev/null |
+	sed -n 's/^[Cc]ontent-[Tt]ype: *//p' | tr -d '\r')
+if [ "$ct" = "text/csv" ]; then
+	echo "  text/csv, from metadata.contentType"
+else
+	note "Content-Type: \"$ct\", expected text/csv"
 fi
 
 echo "--- a file with no content type takes the location's default ---"
 ct=$(curl -s -o /dev/null -D - --max-time 20 \
 	"http://127.0.0.1:$PORT/name/plain.txt" 2>/dev/null |
 	sed -n 's/^[Cc]ontent-[Tt]ype: *//p' | tr -d '\r')
-if [ "$ct" = "application/octet-stream" ]; then
-	echo "  application/octet-stream, from default_type"
+if [ "$ct" = "text/x-gridfs-default" ]; then
+	echo "  text/x-gridfs-default, from default_type"
 else
-	note "Content-Type: \"$ct\", expected application/octet-stream"
+	note "Content-Type: \"$ct\", expected text/x-gridfs-default"
+fi
+
+echo "--- a content type with a CR and an LF in it does not become a header ---"
+curl -s -o /dev/null -D "$WORK/out/evil.head" --max-time 20 \
+	"http://127.0.0.1:$PORT/name/evil.txt" 2>/dev/null || true
+ct=$(sed -n 's/^[Cc]ontent-[Tt]ype: *//p' "$WORK/out/evil.head" | tr -d '\r')
+if [ "$ct" = "text/x-gridfs-default" ] &&
+	! grep -qi '^X-Injected:' "$WORK/out/evil.head"
+then
+	echo "  refused, and the default type used instead"
+else
+	note "Content-Type: \"$ct\", and this came back:"
+	sed 's/^/  /' "$WORK/out/evil.head" >&2
 fi
 
 echo "--- by filename ---"

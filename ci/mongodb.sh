@@ -65,6 +65,7 @@ MONGOD=$WORK/mongodb-linux-x86_64-ubuntu2204-$MONGODB_VERSION/bin/mongod
 TOOLS=$WORK/mongodb-database-tools-ubuntu2204-x86_64-$MONGOTOOLS_VERSION/bin
 MONGOFILES=$TOOLS/mongofiles
 MONGOEXPORT=$TOOLS/mongoexport
+MONGOIMPORT=$TOOLS/mongoimport
 
 [ -x "$MONGOD" ] || { echo "ci/mongodb.sh: no mongod at $MONGOD" >&2; exit 1; }
 [ -x "$MONGOFILES" ] || {
@@ -73,6 +74,10 @@ MONGOEXPORT=$TOOLS/mongoexport
 }
 [ -x "$MONGOEXPORT" ] || {
 	echo "ci/mongodb.sh: no mongoexport at $MONGOEXPORT" >&2
+	exit 1
+}
+[ -x "$MONGOIMPORT" ] || {
+	echo "ci/mongodb.sh: no mongoimport at $MONGOIMPORT" >&2
 	exit 1
 }
 
@@ -120,17 +125,19 @@ uri="mongodb://127.0.0.1:$PORT"
 # gets in GridFS.  Handing the path over as the name, which is what
 # "mongofiles put <path>" does, stores the whole path -- and then nothing
 # can be asked for by a sensible name.
-"$MONGOFILES" --uri "$uri" --db "$DB" --quiet \
-	put small.txt --local "$WORK/small.txt" --type text/plain > /dev/null
+#
+# None of them is given a --type.  Where mongofiles puts what it is told
+# there is its own business, and it would be deciding the content-type
+# cases rather than the module: those records get their field written
+# straight into them further down.  plain.txt keeps no content type at all,
+# so that the location's own default_type has to be used for it.
+for name in small.txt plain.txt meta.txt evil.txt; do
+	"$MONGOFILES" --uri "$uri" --db "$DB" --quiet \
+		put "$name" --local "$WORK/small.txt" > /dev/null
+done
 
 "$MONGOFILES" --uri "$uri" --db "$DB" --quiet \
-	put large.bin --local "$WORK/large.bin" \
-	--type application/octet-stream > /dev/null
-
-# A third one with no content type, so that the location's own default_type
-# has to be used for it.
-"$MONGOFILES" --uri "$uri" --db "$DB" --quiet \
-	put plain.txt --local "$WORK/small.txt" > /dev/null
+	put large.bin --local "$WORK/large.bin" > /dev/null
 
 echo "ci/mongodb.sh: database $DB holds:"
 "$MONGOFILES" --uri "$uri" --db "$DB" --quiet list | sed 's/^/ci\/mongodb.sh:   /'
@@ -171,8 +178,12 @@ oid_of() {
 small_id=$(oid_of small.txt)
 large_id=$(oid_of large.bin)
 plain_id=$(oid_of plain.txt)
+meta_id=$(oid_of meta.txt)
+evil_id=$(oid_of evil.txt)
 
-for pair in "small.txt:$small_id" "large.bin:$large_id" "plain.txt:$plain_id"; do
+for pair in "small.txt:$small_id" "large.bin:$large_id" \
+	"plain.txt:$plain_id" "meta.txt:$meta_id" "evil.txt:$evil_id"
+do
 	if [ -z "${pair#*:}" ]; then
 		echo "ci/mongodb.sh: no object id for ${pair%%:*} in fs.files" >&2
 		printf '%s\n' "$files_json" | sed 's/^/ci\/mongodb.sh:   /' >&2
@@ -181,6 +192,45 @@ for pair in "small.txt:$small_id" "large.bin:$large_id" "plain.txt:$plain_id"; d
 done
 
 echo "ci/mongodb.sh: small.txt is $small_id, large.bin is $large_id"
+
+# ------------------------------------------------------- the content types
+#
+# Each of the three cases needs its content type in a particular place, and
+# that is written here rather than left to a tool:
+#
+#   small.txt  the top-level contentType, deprecated out of the GridFS
+#              specification in 2019 and still what a file written before
+#              that carries
+#   meta.txt   metadata.contentType, where it has belonged since
+#   evil.txt   a value with a CR and an LF in it, which has to be refused
+#              rather than ending the header and starting one of its own
+#
+# --mode=merge sets those fields and leaves the rest of each record alone.
+# The ids are the ones just read out of fs.files, so there is nothing for
+# the upsert to insert.
+cat > "$WORK/types.json" <<EOF
+{"_id":{"\$oid":"$small_id"},"contentType":"text/plain"}
+{"_id":{"\$oid":"$meta_id"},"metadata":{"contentType":"text/csv"}}
+{"_id":{"\$oid":"$evil_id"},"contentType":"text/plain\r\nX-Injected: yes"}
+EOF
+
+"$MONGOIMPORT" --uri "$uri" --db "$DB" --collection fs.files \
+	--mode=merge --upsertFields _id --file "$WORK/types.json" \
+	> "$WORK/mongoimport.log" 2>&1 || {
+	echo "ci/mongodb.sh: mongoimport failed" >&2
+	sed 's/^/ci\/mongodb.sh:   /' "$WORK/mongoimport.log" >&2 2>/dev/null || true
+	exit 1
+}
+
+# What is actually in the records now, which is the thing every answer
+# below is compared against.
+"$MONGOEXPORT" --uri "$uri" --db "$DB" --collection fs.files \
+	--out "$WORK/files.json" > "$WORK/mongoexport.log" 2>&1 || {
+	echo "ci/mongodb.sh: mongoexport failed" >&2
+	sed 's/^/ci\/mongodb.sh:   /' "$WORK/mongoexport.log" >&2 2>/dev/null || true
+	exit 1
+}
+sed 's/^/ci\/mongodb.sh:   /' "$WORK/files.json"
 
 cat > "$WORK/paths.env" <<EOF
 MONGO_WORK=$WORK
