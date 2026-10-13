@@ -134,8 +134,17 @@ echo "ci/mongodb.sh: database $DB holds:"
 # rely on; mongoexport prints what is actually in fs.files, and an ObjectId
 # comes out as {"$oid":"..."} -- which also says it is an ObjectId and not a
 # string that looks like one.
+# The whole document rather than selected fields, and stderr kept: a
+# mongoexport that refuses an option would otherwise say so into /dev/null
+# and look like an empty collection.
 files_json=$("$MONGOEXPORT" --uri "$uri" --quiet --collection fs.files \
-	--fields _id,filename 2>/dev/null)
+	2> "$WORK/mongoexport.err") || true
+
+if [ -z "$files_json" ]; then
+	echo "ci/mongodb.sh: mongoexport returned nothing for fs.files" >&2
+	sed 's/^/ci\/mongodb.sh:   /' "$WORK/mongoexport.err" >&2 2>/dev/null || true
+	exit 1
+fi
 
 oid_of() {
 	printf '%s\n' "$files_json" |
