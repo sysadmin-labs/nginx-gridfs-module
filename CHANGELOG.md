@@ -127,13 +127,11 @@ Newest first.  Dates are release dates.
   compared byte for byte, with the ranges, the content type, a HEAD request,
   a key that is not there, and ten requests at once.
 
-  Both mongod and mongofiles come from MongoDB's own archives, pinned by
-  digest.  Ubuntu dropped MongoDB over the licence change, and MongoDB
-  publishes no FreeBSD archive, which is why this runs on Linux only.
-  FreeBSD does have the server in its ports tree -- `databases/mongodb70`
-  and newer, with `databases/mongodb-tools` beside it -- so these checks
-  could run there from packages; that is a different mechanism and is not
-  what this script does.
+  On Linux mongod and mongofiles come from MongoDB's own archives, pinned
+  by digest, because Ubuntu dropped MongoDB over the licence change.
+  MongoDB publishes no FreeBSD archive, so an installed server is used
+  there -- `databases/mongodb70` with `databases/mongodb-tools` -- while
+  the workflow runs this on Linux only.
 
 - The reload gate asks the module without needing a database: it requests a
   well-formed object id from a port nothing listens on and insists on a 503.

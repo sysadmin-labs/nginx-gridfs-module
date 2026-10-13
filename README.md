@@ -160,14 +160,12 @@ chunk, one far bigger -- and then the files are fetched through nginx and
 compared byte for byte, with the ranges, the content type, the ETag, a HEAD
 request, and ten requests at once.
 
-Both the server and `mongofiles` come from MongoDB's own archives, pinned by
-digest in `.github/versions.env`.  Ubuntu dropped MongoDB over the licence
-change, and MongoDB publishes no FreeBSD archive, which is why
-`ci/gridfs.sh` runs on Linux only.  FreeBSD does have the server in its
-ports tree -- `databases/mongodb70` and newer, with
-`databases/mongodb-tools` beside it -- so the same checks could run there
-from packages; that is a different mechanism than the pinned archives and
-is not set up here.
+On Linux the server and `mongofiles` come from MongoDB's own archives,
+pinned by digest in `.github/versions.env`, because MongoDB is not a
+package on Ubuntu -- it was dropped over the licence change.  MongoDB
+publishes no FreeBSD archive, so `ci/mongodb.sh` uses an installed server
+there instead, `databases/mongodb70` with `databases/mongodb-tools` beside
+it; the workflow still runs the end-to-end check on Linux only.
 
 ## License
 

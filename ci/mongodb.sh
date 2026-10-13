@@ -7,13 +7,12 @@
 #     MONGO_PORT   port to listen on, 17017 by default
 #     MONGO_DB     database to use, ngxtest by default
 #
-# The server and mongofiles come from MongoDB's own archives, pinned by
-# digest in .github/versions.env, and are unpacked under ci-work/, so there
-# is nothing to install and nothing of the host's to disturb.  Ubuntu
-# dropped MongoDB over the licence change, and MongoDB publishes no FreeBSD
-# archive -- FreeBSD carries the server in its ports tree instead
-# (databases/mongodb70 and newer), which is a different mechanism than a
-# pinned archive and not what this script does.
+# On Linux the server and the tools come from MongoDB's own archives,
+# pinned by digest in .github/versions.env and unpacked under ci-work/, so
+# there is nothing to install and nothing of the host's to disturb: Ubuntu
+# dropped MongoDB over the licence change.  MongoDB publishes no FreeBSD
+# archive, so there the installed ones are used -- databases/mongodb70 and
+# databases/mongodb-tools.
 #
 # It leaves an already running server on that port alone.
 
@@ -37,39 +36,51 @@ if command -v nc > /dev/null 2>&1 && nc -z 127.0.0.1 "$PORT" 2>/dev/null; then
 	exit 0
 fi
 
-case $(uname -s) in
-Linux)  ;;
-*)
-	echo "ci/mongodb.sh: MongoDB publishes no server archive for $(uname -s)," >&2
-	echo "ci/mongodb.sh: so this cannot run here.  The module builds and the" >&2
-	echo "ci/mongodb.sh: suite in t/ runs; only this script needs a server." >&2
-	echo "ci/mongodb.sh: on FreeBSD the ports tree has one: databases/mongodb70" >&2
-	echo "ci/mongodb.sh: and databases/mongodb-tools." >&2
-	exit 2
-	;;
-esac
-
 rm -rf "$WORK"
 mkdir -p "$WORK/data" "$WORK/dl"
 
-base=https://fastdl.mongodb.org
+# Where the server and the tools come from.  MongoDB publishes archives for
+# Linux, macOS and Windows and none for FreeBSD, so this takes the pinned
+# archives where they exist and what is installed where they do not --
+# FreeBSD has the server in its ports tree, databases/mongodb70 and newer
+# with databases/mongodb-tools beside it.  Either way the server runs out
+# of ci-work/ on a port of its own and nothing of the host's is touched.
+if [ "$(uname -s)" = Linux ]; then
+	base=https://fastdl.mongodb.org
 
-"$SRC/ci/fetch-verify.sh" \
-	"$base/linux/mongodb-linux-x86_64-ubuntu2204-$MONGODB_VERSION.tgz" \
-	"$MONGODB_SHA256" "$WORK/dl/mongodb.tgz"
+	"$SRC/ci/fetch-verify.sh" \
+		"$base/linux/mongodb-linux-x86_64-ubuntu2204-$MONGODB_VERSION.tgz" \
+		"$MONGODB_SHA256" "$WORK/dl/mongodb.tgz"
 
-"$SRC/ci/fetch-verify.sh" \
-	"$base/tools/db/mongodb-database-tools-ubuntu2204-x86_64-$MONGOTOOLS_VERSION.tgz" \
-	"$MONGOTOOLS_SHA256" "$WORK/dl/mongotools.tgz"
+	"$SRC/ci/fetch-verify.sh" \
+		"$base/tools/db/mongodb-database-tools-ubuntu2204-x86_64-$MONGOTOOLS_VERSION.tgz" \
+		"$MONGOTOOLS_SHA256" "$WORK/dl/mongotools.tgz"
 
-tar xzf "$WORK/dl/mongodb.tgz" -C "$WORK"
-tar xzf "$WORK/dl/mongotools.tgz" -C "$WORK"
+	tar xzf "$WORK/dl/mongodb.tgz" -C "$WORK"
+	tar xzf "$WORK/dl/mongotools.tgz" -C "$WORK"
 
-MONGOD=$WORK/mongodb-linux-x86_64-ubuntu2204-$MONGODB_VERSION/bin/mongod
-TOOLS=$WORK/mongodb-database-tools-ubuntu2204-x86_64-$MONGOTOOLS_VERSION/bin
-MONGOFILES=$TOOLS/mongofiles
-MONGOEXPORT=$TOOLS/mongoexport
-MONGOIMPORT=$TOOLS/mongoimport
+	MONGOD=$WORK/mongodb-linux-x86_64-ubuntu2204-$MONGODB_VERSION/bin/mongod
+	TOOLS=$WORK/mongodb-database-tools-ubuntu2204-x86_64-$MONGOTOOLS_VERSION/bin
+	MONGOFILES=$TOOLS/mongofiles
+	MONGOEXPORT=$TOOLS/mongoexport
+	MONGOIMPORT=$TOOLS/mongoimport
+else
+	for t in mongod mongofiles mongoexport mongoimport; do
+		command -v "$t" > /dev/null 2>&1 || {
+			echo "ci/mongodb.sh: MongoDB publishes no archive for $(uname -s)," >&2
+			echo "ci/mongodb.sh: and $t is not installed either, so this cannot" >&2
+			echo "ci/mongodb.sh: run here.  The module builds and the suite in t/" >&2
+			echo "ci/mongodb.sh: runs; only this script needs a server.  On FreeBSD:" >&2
+			echo "ci/mongodb.sh: pkg install mongodb70 mongodb-tools" >&2
+			exit 2
+		}
+	done
+
+	MONGOD=$(command -v mongod)
+	MONGOFILES=$(command -v mongofiles)
+	MONGOEXPORT=$(command -v mongoexport)
+	MONGOIMPORT=$(command -v mongoimport)
+fi
 
 [ -x "$MONGOD" ] || { echo "ci/mongodb.sh: no mongod at $MONGOD" >&2; exit 1; }
 [ -x "$MONGOFILES" ] || {
